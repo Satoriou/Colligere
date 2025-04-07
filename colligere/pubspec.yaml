@@ -16,11 +16,18 @@ dependencies:
   flutter:
     sdk: flutter
   sqflite: ^2.3.0
+  http: ^1.3.0
   crypto: ^3.0.3
   path: ^1.8.3
+  cached_network_image: ^3.3.0
+  shared_preferences: ^2.2.2
+  # spotify_sdk: ^2.3.1  # Commenté temporairement
+  spotify: ^0.12.0
 
 
   cupertino_icons: ^1.0.8
+  carousel_slider: ^5.0.0
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -41,3 +48,7 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  
+  assets:
+    - assets/colligere_logo.png
+    # Vérifiez que le nom du fichier correspond exactement
