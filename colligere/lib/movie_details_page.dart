@@ -3,6 +3,8 @@ import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/api/api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:colligere/services/collection_service.dart'; // Nouvel import
+import 'package:shared_preferences/shared_preferences.dart'; // Nouvel import
 
 class MovieDetailsPage extends StatefulWidget {
   final Movie movie;
@@ -15,19 +17,148 @@ class MovieDetailsPage extends StatefulWidget {
 
 class _MovieDetailsPageState extends State<MovieDetailsPage> {
   late Future<Map<String, dynamic>> _movieDetailsFuture;
-  
+  late CollectionService _collectionService;
+  String _userEmail = '';
+  bool _isFavorite = false;
+
   @override
   void initState() {
     super.initState();
     _movieDetailsFuture = Api().getMovieDetails(widget.movie.id);
+    _collectionService = CollectionService();
+    _getUserInfo();
   }
-  
+
+  Future<void> _getUserInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('userEmail') ?? '';
+    
+    setState(() {
+      _userEmail = email;
+    });
+    
+    if (email.isNotEmpty) {
+      final isFav = await _collectionService.isMovieFavorite(email, widget.movie.id);
+      setState(() {
+        _isFavorite = isFav;
+      });
+    }
+  }
+
   String _formatReleaseYear(String releaseDate) {
     if (releaseDate.isEmpty) return 'Date inconnue';
     try {
       return releaseDate.substring(0, 4); // Extraire l'année (YYYY-MM-DD)
     } catch (e) {
       return releaseDate;
+    }
+  }
+
+  void _addToCollection() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 40, 55, 71),
+        title: const Text('Ajouter à ma collection', 
+          style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Sélectionnez le format:', 
+              style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 10),
+            _buildFormatButton('Blu-Ray'),
+            _buildFormatButton('DVD'),
+            _buildFormatButton('Steelbook'),
+            _buildFormatButton('4K Blu-Ray'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormatButton(String format) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color.fromARGB(249, 52, 73, 94),
+          minimumSize: const Size(double.infinity, 44),
+        ),
+        onPressed: () async {
+          final result = await _collectionService.addMovieToCollection(
+            _userEmail, 
+            widget.movie.id, 
+            widget.movie.title,
+            widget.movie.posterPath,
+            format
+          );
+          
+          Navigator.of(context).pop();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result ? 'Ajouté à votre collection' : 'Erreur lors de l\'ajout'
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
+        child: Text(format, style: const TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_userEmail.isEmpty) return;
+    
+    try {
+      bool success;
+      if (_isFavorite) {
+        success = await _collectionService.removeMovieFromFavorites(
+          _userEmail, 
+          widget.movie.id
+        );
+      } else {
+        success = await _collectionService.addMovieToFavorites(
+          _userEmail, 
+          widget.movie.id, 
+          widget.movie.title,
+          widget.movie.posterPath
+        );
+      }
+      
+      if (success) {
+        setState(() {
+          _isFavorite = !_isFavorite;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isFavorite 
+              ? 'Ajouté aux favoris' 
+              : 'Retiré des favoris'
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Une erreur est survenue'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Erreur dans _toggleFavorite: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Une erreur est survenue'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -165,11 +296,14 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
                         Row(
                           children: [
                             IconButton(
-                              onPressed: () {},
-                              icon: const Icon(Icons.favorite_border, color: Colors.white),
+                              onPressed: _toggleFavorite,
+                              icon: Icon(
+                                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: _isFavorite ? Colors.red : Colors.white,
+                              ),
                             ),
                             IconButton(
-                              onPressed: () {},
+                              onPressed: _addToCollection,
                               icon: const Icon(Icons.add, color: Colors.white),
                             ),
                             IconButton(

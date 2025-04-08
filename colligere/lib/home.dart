@@ -6,7 +6,12 @@ import 'package:colligere/model/model_album.dart';
 import 'package:colligere/search_page.dart';
 import 'package:colligere/logout.dart';
 import 'package:colligere/settings_page.dart';
-import 'package:colligere/movie_details_page.dart'; // Nouvel import
+import 'package:colligere/movie_details_page.dart';
+import 'package:colligere/cd_details_page.dart';
+import 'package:colligere/collection_page.dart';
+import 'package:colligere/services/collection_service.dart';
+import 'package:colligere/favorites_page.dart';
+import 'package:colligere/utils/logout_helper.dart'; // Ajout de cet import pour LogoutHelper
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,8 +34,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   // Albums
   late Future<List<Album>> newReleases;
   late Future<List<Album>> popularAlbums;
+  late Future<List<Album>> bestAlbumsOfAllTime; // New variable for best albums
 
   String userEmail = '';
+  late CollectionService _collectionService;
 
   @override
   void initState() {
@@ -45,9 +52,12 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     // Initialisation des données albums
     newReleases = SpotifyApi().getNewReleases();
     popularAlbums = SpotifyApi().getPopularAlbums();
+    bestAlbumsOfAllTime = SpotifyApi().getBestAlbumsOfAllTime();
 
     _precacheMovieImages();
+    _precacheAlbumImages(); // Add this call
     _getUserInfo();
+    _collectionService = CollectionService();
   }
 
   @override
@@ -82,6 +92,84 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     } catch (e) {
       print('Erreur lors du préchargement des images: $e');
     }
+  }
+
+  // Add this method to preload album images
+  void _precacheAlbumImages() async {
+    try {
+      final newReleasesList = await newReleases;
+      final popularList = await popularAlbums;
+      final bestList = await bestAlbumsOfAllTime;
+
+      final allAlbums = [...newReleasesList, ...popularList, ...bestList];
+
+      for (var album in allAlbums) {
+        if (album.imageUrl.isNotEmpty) {
+          precacheImage(
+            CachedNetworkImageProvider(album.imageUrl),
+            context
+          );
+        }
+      }
+    } catch (e) {
+      print('Error preloading album images: $e');
+    }
+  }
+
+  void _addToCollection(Movie movie) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 40, 55, 71),
+        title: const Text('Ajouter à ma collection', 
+          style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Sélectionnez le format:', 
+              style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 10),
+            _buildFormatButton(movie, 'Blu-Ray'),
+            _buildFormatButton(movie, 'DVD'),
+            _buildFormatButton(movie, 'Steelbook'),
+            _buildFormatButton(movie, '4K Blu-Ray'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormatButton(Movie movie, String format) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color.fromARGB(249, 52, 73, 94),
+          minimumSize: const Size(double.infinity, 44),
+        ),
+        onPressed: () async {
+          final result = await _collectionService.addMovieToCollection(
+            userEmail, 
+            movie.id, 
+            movie.title,
+            movie.posterPath,
+            format
+          );
+          
+          Navigator.of(context).pop();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result ? 'Ajouté à votre collection' : 'Erreur lors de l\'ajout'
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
+        child: Text(format, style: const TextStyle(color: Colors.white)),
+      ),
+    );
   }
 
   Widget _buildMovieList(Future<List<Movie>> moviesFuture) {
@@ -229,57 +317,65 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
               double leftMargin = index == 0 ? 0 : 10;
               double rightMargin = index == albums.length - 1 ? 0 : 10;
 
-              return Container(
-                width: 150,
-                margin: EdgeInsets.only(left: leftMargin, right: rightMargin),
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: CachedNetworkImage(
-                        imageUrl: album.imageUrl,
-                        height: 150,
-                        width: 150,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: Colors.grey[800],
-                          child: const Center(
-                            child: SizedBox(
-                              width: 30,
-                              height: 30,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white54,
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => CdDetailsPage(album: album)),
+                  );
+                },
+                child: Container(
+                  width: 150,
+                  margin: EdgeInsets.only(left: leftMargin, right: rightMargin),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: CachedNetworkImage(
+                          imageUrl: album.imageUrl,
+                          height: 150,
+                          width: 150,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(
+                            color: Colors.grey[800],
+                            child: const Center(
+                              child: SizedBox(
+                                width: 30,
+                                height: 30,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white54,
+                                ),
                               ),
                             ),
                           ),
+                          errorWidget: (context, url, error) => Container(
+                            color: Colors.grey[800],
+                            child: const Center(child: Text('Image non disponible', style: TextStyle(color: Colors.white70))),
+                          ),
+                          memCacheHeight: 400,
                         ),
-                        errorWidget: (context, url, error) => Container(
-                          color: Colors.grey[800],
-                          child: const Center(child: Text('Image non disponible', style: TextStyle(color: Colors.white70))),
-                        ),
-                        memCacheHeight: 400,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      album.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      album.artist,
-                      style: const TextStyle(color: Colors.white70, fontSize: 10),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        album.name,
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        album.artist,
+                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -350,6 +446,26 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
               ),
             ),
             ListTile(
+              leading: const Icon(Icons.collections_bookmark),
+              title: const Text("Ma Collection"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CollectionPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite),
+              title: const Text("Mes Favoris"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const FavoritesPage()),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.settings),
               title: const Text("Paramètres"),
               onTap: () {
@@ -362,13 +478,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text("Déconnexion"),
-              onTap: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.clear();
-                if (context.mounted) {
-                  Navigator.of(context).pushReplacementNamed('/login');
-                }
-              },
+              onTap: () => LogoutHelper.confirmAndLogout(context),
             ),
           ],
         ),
@@ -429,6 +539,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                   ),
                 ),
                 _buildAlbumList(popularAlbums),
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text(
+                    "Albums Cultes",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                _buildAlbumList(bestAlbumsOfAllTime),
               ],
             ),
           ),

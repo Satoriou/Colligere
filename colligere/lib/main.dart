@@ -72,7 +72,11 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: isLoggedIn ? Home() : const LoginPage(),
+      home: isLoggedIn ? const Home() : const LoginPage(),
+      routes: {
+        '/login': (context) => const LoginPage(),
+        '/home': (context) => const Home(),
+      },
     );
   }
 }

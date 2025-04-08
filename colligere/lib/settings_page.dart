@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'main.dart';
 import 'logout.dart';
+import 'package:flutter/foundation.dart';
+import 'database_helper.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -19,7 +21,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late String username = '';
   late Database _database;
   bool _isLoading = true;
-  
+
   // Contrôleurs pour les formulaires
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _currentPasswordController = TextEditingController();
@@ -55,19 +57,19 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       String email = prefs.getString('userEmail') ?? '';
-      
+
       if (email.isEmpty) {
         setState(() => _isLoading = false);
         return;
       }
-      
+
       // Récupérer les données utilisateur depuis la base de données
       List<Map<String, dynamic>> result = await _database.query(
         'users',
         where: 'email = ?',
         whereArgs: [email],
       );
-      
+
       if (result.isNotEmpty) {
         setState(() {
           userEmail = email;
@@ -83,7 +85,7 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   void _showMessage(String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -101,33 +103,33 @@ class _SettingsPageState extends State<SettingsPage> {
   String _hashPassword(String password) {
     return sha256.convert(utf8.encode(password)).toString();
   }
-  
+
   // Méthode pour mettre à jour le nom d'utilisateur
   Future<void> _updateUsername() async {
     String newUsername = _usernameController.text;
-    
+
     if (newUsername.isEmpty || newUsername.length < 3) {
       _showMessage('Le nom d\'utilisateur doit contenir au moins 3 caractères');
       return;
     }
-    
+
     if (newUsername == username) {
       _showMessage('Veuillez entrer un nom d\'utilisateur différent');
       return;
     }
-    
+
     // Vérifier si le nom d'utilisateur existe déjà
     List<Map<String, dynamic>> existingUsers = await _database.query(
       'users',
       where: 'username = ? AND email != ?',
       whereArgs: [newUsername, userEmail],
     );
-    
+
     if (existingUsers.isNotEmpty) {
       _showMessage('Ce nom d\'utilisateur est déjà utilisé');
       return;
     }
-    
+
     // Mettre à jour dans la base de données
     await _database.update(
       'users',
@@ -135,39 +137,39 @@ class _SettingsPageState extends State<SettingsPage> {
       where: 'email = ?',
       whereArgs: [userEmail],
     );
-    
+
     // Mettre à jour dans les préférences partagées
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', newUsername);
-    
+
     setState(() {
       username = newUsername;
     });
-    
+
     _showMessage('Nom d\'utilisateur mis à jour avec succès');
   }
-  
+
   // Méthode pour mettre à jour le mot de passe
   Future<void> _updatePassword() async {
     String currentPassword = _currentPasswordController.text;
     String newPassword = _newPasswordController.text;
     String confirmPassword = _confirmPasswordController.text;
-    
+
     if (currentPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty) {
       _showMessage('Veuillez remplir tous les champs');
       return;
     }
-    
+
     if (newPassword.length < 6) {
       _showMessage('Le nouveau mot de passe doit contenir au moins 6 caractères');
       return;
     }
-    
+
     if (newPassword != confirmPassword) {
       _showMessage('Les mots de passe ne correspondent pas');
       return;
     }
-    
+
     // Vérifier le mot de passe actuel
     String hashedCurrentPassword = _hashPassword(currentPassword);
     List<Map<String, dynamic>> user = await _database.query(
@@ -175,12 +177,12 @@ class _SettingsPageState extends State<SettingsPage> {
       where: 'email = ? AND password = ?',
       whereArgs: [userEmail, hashedCurrentPassword],
     );
-    
+
     if (user.isEmpty) {
       _showMessage('Mot de passe actuel incorrect');
       return;
     }
-    
+
     // Mettre à jour le mot de passe
     String hashedNewPassword = _hashPassword(newPassword);
     await _database.update(
@@ -189,24 +191,24 @@ class _SettingsPageState extends State<SettingsPage> {
       where: 'email = ?',
       whereArgs: [userEmail],
     );
-    
+
     _showMessage('Mot de passe mis à jour avec succès');
-    
+
     // Réinitialiser les champs
     _currentPasswordController.clear();
     _newPasswordController.clear();
     _confirmPasswordController.clear();
   }
-  
+
   // Méthode pour supprimer le compte
   Future<void> _deleteAccount() async {
     String password = _deletePasswordController.text;
-    
+
     if (password.isEmpty) {
       _showMessage('Veuillez entrer votre mot de passe pour confirmer la suppression');
       return;
     }
-    
+
     // Vérifier le mot de passe
     String hashedPassword = _hashPassword(password);
     List<Map<String, dynamic>> user = await _database.query(
@@ -214,12 +216,12 @@ class _SettingsPageState extends State<SettingsPage> {
       where: 'email = ? AND password = ?',
       whereArgs: [userEmail, hashedPassword],
     );
-    
+
     if (user.isEmpty) {
       _showMessage('Mot de passe incorrect');
       return;
     }
-    
+
     // Confirmer la suppression
     bool? confirmDelete = await showDialog<bool>(
       context: context,
@@ -242,24 +244,24 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
-    
+
     if (confirmDelete != true) {
       return;
     }
-    
+
     // Supprimer le compte de la base de données
     await _database.delete(
       'users',
       where: 'email = ?',
       whereArgs: [userEmail],
     );
-    
+
     // Supprimer les informations de connexion des préférences
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
-    
+
     _showMessage('Votre compte a été supprimé');
-    
+
     // Rediriger vers la page de connexion
     if (!context.mounted) return;
     Navigator.pushAndRemoveUntil(
@@ -350,9 +352,9 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Section changement de mot de passe
                   Card(
                     color: const Color.fromARGB(249, 52, 73, 94).withOpacity(0.5),
@@ -432,9 +434,9 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Section suppression de compte
                   Card(
                     color: Colors.redAccent.withOpacity(0.2),
@@ -489,9 +491,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
+                  // Add Debug Section in debug mode
+                  if (kDebugMode)
+                    ListTile(
+                      title: const Text('Database Utils', style: TextStyle(color: Colors.white)),
+                      leading: const Icon(Icons.bug_report, color: Colors.redAccent),
+                      onTap: () {
+                        DatabaseHelper.showDatabaseUtilityDialog(context);
+                      },
+                    ),
+
                   // Bouton de déconnexion
                   ElevatedButton.icon(
                     onPressed: () => logout(context),

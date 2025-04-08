@@ -4,7 +4,6 @@ class Album {
   final String artist;
   final String imageUrl;
   final String releaseDate;
-  final int popularity;
 
   Album({
     required this.id,
@@ -12,7 +11,6 @@ class Album {
     required this.artist,
     required this.imageUrl,
     required this.releaseDate,
-    required this.popularity,
   });
 
   factory Album.fromMap(Map<String, dynamic> map) {
@@ -21,8 +19,7 @@ class Album {
       name: map['name'] ?? '',
       artist: map['artists'][0]['name'] ?? '',
       imageUrl: map['images'].isNotEmpty ? map['images'][0]['url'] ?? '' : '',
-      releaseDate: map['release_date'] ?? '',
-      popularity: map['popularity'] ?? 0,
+      releaseDate: map['release_date'] ?? ''
     );
   }
 }

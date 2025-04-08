@@ -4,6 +4,7 @@ import 'package:colligere/api/spotify_api.dart';
 import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
 import 'package:colligere/movie_details_page.dart'; // Ajout de l'import pour la page de détails
+import 'package:colligere/cd_details_page.dart'; // Import de la page de détails d'album
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
@@ -378,55 +379,60 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       itemCount: _albumResults.length,
       itemBuilder: (context, index) {
         final album = _albumResults[index];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8.0),
-                child: CachedNetworkImage(
-                  imageUrl: album.imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (context, url) => Container(
-                    color: Colors.grey[800],
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white54,
+        return GestureDetector(
+          onTap: () {
+            // Navigation améliorée vers la page de détails de l'album
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CdDetailsPage(album: album),
+              ),
+            ).then((_) {
+              // Rafraîchir l'état de la recherche lorsqu'on revient
+              if (_searchController.text.isNotEmpty) {
+                _searchResults(_searchController.text);
+              }
+            });
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8.0),
+                  child: CachedNetworkImage(
+                    imageUrl: album.imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    placeholder: (context, url) => Container(
+                      color: Colors.grey[800],
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white54,
+                        ),
                       ),
                     ),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.grey[800],
-                    child: const Center(child: Text('Image non disponible', style: TextStyle(color: Colors.white70))),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.grey[800],
+                      child: const Center(child: Text('Image non disponible', style: TextStyle(color: Colors.white70))),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              album.name,
-              style: GoogleFonts.roboto(
-                fontSize: 14, 
-                color: Colors.white,
-                fontWeight: FontWeight.bold
+              const SizedBox(height: 8),
+              Text(
+                album.name,
+                style: GoogleFonts.roboto(
+                  color: Colors.white70,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              album.artist,
-              style: GoogleFonts.roboto(
-                fontSize: 12, 
-                color: Colors.white70,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+            ],
+          ),
         );
-      },
+       },
     );
   }
 }
