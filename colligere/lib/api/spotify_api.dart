@@ -121,7 +121,7 @@ class SpotifyApi {
         Uri.https(_baseUrl, '/$_apiVersion/search', {
           'q': 'artist:Drake OR artist:Kendrick Lamar OR artist:Beyonce OR artist:Billie Eilish OR artist:Bad Bunny',
           'type': 'album',
-          'limit': '20',
+          'limit': '30',
           'include_external': 'audio'
         }),
         headers: {'Authorization': 'Bearer $token'},
@@ -254,7 +254,7 @@ class SpotifyApi {
     try {
       final token = await _getAccessToken();
       final response = await http.get(
-        Uri.https(_baseUrl, '/$_apiVersion/browse/categories/toplists/playlists', {'limit': '10'}),
+        Uri.https(_baseUrl, '/$_apiVersion/browse/categories/toplists/playlists', {'limit': '30'}),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -381,7 +381,7 @@ class SpotifyApi {
           {
             'q': query,
             'type': 'album',
-            'limit': '20'
+            'limit': '30'
           }
         ),
         headers: {'Authorization': 'Bearer $token'},

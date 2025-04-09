@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:colligere/api/api.dart';
 import 'package:colligere/api/spotify_api.dart';
+import 'package:colligere/api/openlibrary_api.dart';
 import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
+import 'package:colligere/model/model_book.dart';
 import 'package:colligere/search_page.dart';
 import 'package:colligere/logout.dart';
 import 'package:colligere/settings_page.dart';
 import 'package:colligere/movie_details_page.dart';
 import 'package:colligere/cd_details_page.dart';
+import 'package:colligere/book_details_page.dart';
 import 'package:colligere/collection_page.dart';
 import 'package:colligere/services/collection_service.dart';
 import 'package:colligere/favorites_page.dart';
@@ -15,6 +18,7 @@ import 'package:colligere/utils/logout_helper.dart'; // Ajout de cet import pour
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -34,15 +38,22 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   // Albums
   late Future<List<Album>> newReleases;
   late Future<List<Album>> popularAlbums;
-  late Future<List<Album>> bestAlbumsOfAllTime; // New variable for best albums
+  late Future<List<Album>> bestAlbumsOfAllTime;
+
+  // Books
+  late Future<List<Book>> popularBooks;
+  late Future<List<Book>> newBooks;
+  late Future<List<Book>> bestBooks;
 
   String userEmail = '';
+  String username = '';
+  String? _profileImagePath;
   late CollectionService _collectionService;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     // Initialisation des données films
     upcomingMovies = Api().getUpcomingMovies();
@@ -54,8 +65,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     popularAlbums = SpotifyApi().getPopularAlbums();
     bestAlbumsOfAllTime = SpotifyApi().getBestAlbumsOfAllTime();
 
+    // Initialisation des données livres
+    popularBooks = OpenLibraryApi().getPopularBooks();
+    newBooks = OpenLibraryApi().getNewReleases();
+    bestBooks = OpenLibraryApi().getBestBooks();
+
     _precacheMovieImages();
-    _precacheAlbumImages(); // Add this call
+    _precacheAlbumImages();
+    _precacheBookImages();
     _getUserInfo();
     _collectionService = CollectionService();
   }
@@ -68,8 +85,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
 
   Future<void> _getUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('userEmail') ?? '';
+    final name = prefs.getString('username') ?? email.split('@')[0];
+    final profileImagePath = prefs.getString('profileImagePath');
+    
     setState(() {
-      userEmail = prefs.getString('userEmail') ?? '';
+      userEmail = email;
+      username = name;
+      _profileImagePath = profileImagePath;
     });
   }
 
@@ -94,7 +117,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     }
   }
 
-  // Add this method to preload album images
   void _precacheAlbumImages() async {
     try {
       final newReleasesList = await newReleases;
@@ -113,6 +135,27 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
       }
     } catch (e) {
       print('Error preloading album images: $e');
+    }
+  }
+
+  void _precacheBookImages() async {
+    try {
+      final popularList = await popularBooks;
+      final newList = await newBooks;
+      final bestList = await bestBooks;
+
+      final allBooks = [...popularList, ...newList, ...bestList];
+
+      for (var book in allBooks) {
+        if (book.coverUrl.isNotEmpty) {
+          precacheImage(
+            CachedNetworkImageProvider(book.coverUrl),
+            context
+          );
+        }
+      }
+    } catch (e) {
+      print('Error preloading book images: $e');
     }
   }
 
@@ -209,8 +252,8 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         }
 
         final movies = snapshot.data!;
-        return SizedBox(
-          height: 200,
+        return SizedBox( 
+          height: 200, 
           child: ListView.builder(
             padding: EdgeInsets.zero,
             scrollDirection: Axis.horizontal,
@@ -385,6 +428,132 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildBookList(Future<List<Book>> booksFuture) {
+    return FutureBuilder(
+      future: booksFuture,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return SizedBox(
+            height: 200,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 5,
+              itemBuilder: (context, index) {
+                double leftMargin = index == 0 ? 0 : 10;
+                return Container(
+                  width: 150,
+                  margin: EdgeInsets.only(left: leftMargin, right: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        }
+
+        final books = snapshot.data!;
+        return SizedBox(
+          height: 240,
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            scrollDirection: Axis.horizontal,
+            itemCount: books.length,
+            itemBuilder: (context, index) {
+              final book = books[index];
+              double leftMargin = index == 0 ? 0 : 10;
+              double rightMargin = index == books.length - 1 ? 0 : 10;
+
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => BookDetailsPage(book: book)),
+                  );
+                },
+                child: Container(
+                  width: 150,
+                  margin: EdgeInsets.only(left: leftMargin, right: rightMargin),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: book.coverUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                            imageUrl: book.coverUrl,
+                            height: 180,
+                            width: 150,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: Colors.grey[800],
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 30,
+                                  height: 30,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.grey[800],
+                              child: const Center(
+                                child: Icon(Icons.book, size: 50, color: Colors.white70),
+                              ),
+                            ),
+                            memCacheHeight: 400,
+                          )
+                          : Container(
+                            height: 180,
+                            width: 150,
+                            color: Colors.grey[800],
+                            child: const Center(
+                              child: Icon(Icons.book, size: 50, color: Colors.white70),
+                            ),
+                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        book.title,
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        book.author,
+                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -418,6 +587,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
           tabs: const [
             Tab(icon: Icon(Icons.movie_outlined), text: "Films"),
             Tab(icon: Icon(Icons.music_note_outlined), text: "Musique"),
+            Tab(icon: Icon(Icons.book_outlined), text: "Livres"),
           ],
         ),
       ),
@@ -432,15 +602,24 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 40, color: Colors.grey),
-                  ),
+                  _profileImagePath != null
+                    ? CircleAvatar(
+                        radius: 30,
+                        backgroundImage: FileImage(File(_profileImagePath!)),
+                      )
+                    : const CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.person, size: 40, color: Colors.grey),
+                      ),
                   const SizedBox(height: 10),
                   Text(
+                    username,
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
                     userEmail,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
@@ -547,6 +726,38 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                   ),
                 ),
                 _buildAlbumList(bestAlbumsOfAllTime),
+              ],
+            ),
+          ),
+          // Onglet Livres
+          SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text(
+                    "Livres Populaires",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                _buildBookList(popularBooks),
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text(
+                    "Nouveautés",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                _buildBookList(newBooks),
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text(
+                    "Grands Classiques",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                _buildBookList(bestBooks),
               ],
             ),
           ),

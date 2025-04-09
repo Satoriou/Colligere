@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:colligere/api/api.dart';
 import 'package:colligere/api/spotify_api.dart';
+import 'package:colligere/api/openlibrary_api.dart';
 import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
-import 'package:colligere/movie_details_page.dart'; // Ajout de l'import pour la page de détails
-import 'package:colligere/cd_details_page.dart'; // Import de la page de détails d'album
+import 'package:colligere/model/model_book.dart';
+import 'package:colligere/movie_details_page.dart';
+import 'package:colligere/cd_details_page.dart';
+import 'package:colligere/book_details_page.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
@@ -20,6 +23,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   List<Movie> _movieResults = [];
   List<Album> _albumResults = [];
+  List<Book> _bookResults = [];
+  List<Movie> _filteredMovieResults = [];
+  List<Album> _filteredAlbumResults = [];
+  List<Book> _filteredBookResults = [];
   bool _isLoading = false;
   bool _hasSearched = false;
   
@@ -27,13 +34,40 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   Timer? _debounce;
   String _lastQuery = '';
   
-  // Tab controller pour basculer entre films et albums
+  // Tab controller pour basculer entre films, albums et livres
   late TabController _tabController;
+  
+  // Genres sélectionnés pour chaque catégorie
+  String? _selectedMovieGenre;
+  String? _selectedAlbumGenre;
+  String? _selectedBookGenre;
+  
+  // Listes de genres pour chaque catégorie
+  final List<String> _movieGenres = [
+    'Action', 'Aventure', 'Animation', 'Comédie', 'Crime',
+    'Documentaire', 'Drame', 'Famille', 'Fantaisie', 'Histoire',
+    'Horreur', 'Musique', 'Mystère', 'Romance', 'Science-Fiction',
+    'Thriller', 'Guerre', 'Western'
+  ];
+  
+  final List<String> _albumGenres = [
+    'Pop', 'Rock', 'Hip-Hop', 'Rap', 'Jazz',
+    'Classique', 'Blues', 'Country', 'Électronique', 'Folk',
+    'Metal', 'R&B', 'Soul', 'Reggae', 'Punk',
+    'Indie', 'Dance', 'Alternative'
+  ];
+  
+  final List<String> _bookGenres = [
+    'Fiction', 'Non-fiction', 'Science-fiction', 'Fantasy', 'Mystère',
+    'Thriller', 'Romance', 'Horreur', 'Historique', 'Biographie',
+    'Autobiographie', 'Mémoires', 'Classique', 'Poésie', 'Drame',
+    'Aventure', 'Jeunesse', 'Policier', 'Philosophie'
+  ];
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     
     // Ajouter un listener pour le changement de texte
     _searchController.addListener(_onSearchChanged);
@@ -70,6 +104,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         setState(() {
           _movieResults = [];
           _albumResults = [];
+          _bookResults = [];
+          _filteredMovieResults = [];
+          _filteredAlbumResults = [];
+          _filteredBookResults = [];
           _hasSearched = false;
         });
       }
@@ -85,16 +123,22 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     });
 
     try {
-      // Recherche simultanée de films et d'albums
+      // Recherche simultanée de films, d'albums et de livres
       final movieFuture = Api().searchMovies(query);
       final albumFuture = SpotifyApi().searchAlbums(query);
+      final bookFuture = OpenLibraryApi().searchBooks(query);
       
-      // Attendre les deux résultats
-      final results = await Future.wait([movieFuture, albumFuture]);
+      // Attendre les trois résultats
+      final results = await Future.wait([movieFuture, albumFuture, bookFuture]);
       
       setState(() {
         _movieResults = results[0] as List<Movie>;
         _albumResults = results[1] as List<Album>;
+        _bookResults = results[2] as List<Book>;
+        
+        // Appliquer le filtrage initial
+        _applyFilters();
+        
         _isLoading = false;
       });
     } catch (e) {
@@ -109,6 +153,51 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     }
   }
 
+  // Nouvelle méthode pour appliquer les filtres aux résultats
+  void _applyFilters() {
+    setState(() {
+      // Filtrer les films - correction de la logique pour éviter l'erreur avec genreIds
+      _filteredMovieResults = _selectedMovieGenre == null 
+          ? List<Movie>.from(_movieResults)
+          : _movieResults.where((movie) {
+              // Rechercher le genre dans le titre ou la description
+              return movie.title.toLowerCase().contains(_selectedMovieGenre!.toLowerCase()) ||
+                     movie.overview.toLowerCase().contains(_selectedMovieGenre!.toLowerCase()) ||
+                     (movie.releaseDate.isNotEmpty && movie.releaseDate.contains(_selectedMovieGenre!));
+            }).toList();
+      
+      // Filtrer les albums
+      _filteredAlbumResults = _selectedAlbumGenre == null
+          ? List<Album>.from(_albumResults)
+          : _albumResults.where((album) {
+              return album.name.toLowerCase().contains(_selectedAlbumGenre!.toLowerCase()) ||
+                     album.artist.toLowerCase().contains(_selectedAlbumGenre!.toLowerCase());
+            }).toList();
+      
+      // Filtrer les livres
+      _filteredBookResults = _selectedBookGenre == null
+          ? List<Book>.from(_bookResults)
+          : _bookResults.where((book) {
+              if (book.subjects != null && book.subjects!.isNotEmpty) {
+                return book.subjects!.any((subject) => 
+                  subject.toLowerCase().contains(_selectedBookGenre!.toLowerCase()));
+              }
+              return book.title.toLowerCase().contains(_selectedBookGenre!.toLowerCase()) ||
+                   (book.description.isNotEmpty && book.description.toLowerCase().contains(_selectedBookGenre!.toLowerCase()));
+            }).toList();
+    });
+  }
+
+  // Méthode pour réinitialiser les filtres
+  void _resetFilters() {
+    setState(() {
+      _selectedMovieGenre = null;
+      _selectedAlbumGenre = null;
+      _selectedBookGenre = null;
+      _applyFilters();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,8 +210,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         bottom: _hasSearched && !_isLoading ? TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: "Films (${_movieResults.length})"),
-            Tab(text: "Albums (${_albumResults.length})"),
+            Tab(text: "Films (${_filteredMovieResults.length})"),
+            Tab(text: "Albums (${_filteredAlbumResults.length})"),
+            Tab(text: "Livres (${_filteredBookResults.length})"),
           ],
         ) : null,
       ),
@@ -136,7 +226,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               style: const TextStyle(color: Colors.white),
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Rechercher films, albums...',
+                hintText: 'Rechercher films, albums, livres...',
                 hintStyle: const TextStyle(color: Colors.white70),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 suffixIcon: _searchController.text.isNotEmpty
@@ -147,6 +237,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                           setState(() {
                             _movieResults = [];
                             _albumResults = [];
+                            _bookResults = [];
+                            _filteredMovieResults = [];
+                            _filteredAlbumResults = [];
+                            _filteredBookResults = [];
                             _hasSearched = false;
                             _lastQuery = '';
                           });
@@ -163,6 +257,24 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             ),
           ),
           
+          // Filtre de genre (visible uniquement quand on a des résultats)
+          if (_hasSearched && !_isLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildGenreDropdown(),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.filter_list_off, color: Colors.white70),
+                    onPressed: _resetFilters,
+                    tooltip: 'Réinitialiser les filtres',
+                  ),
+                ],
+              ),
+            ),
+            
           // Indicateur de saisie
           if (_searchController.text.isNotEmpty && _searchController.text.length < 2)
             const Padding(
@@ -179,7 +291,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                 ? const Center(child: CircularProgressIndicator())
                 : !_hasSearched
                     ? _buildInitialSearchState()
-                    : _movieResults.isEmpty && _albumResults.isEmpty
+                    : _filteredMovieResults.isEmpty && _filteredAlbumResults.isEmpty && _filteredBookResults.isEmpty
                         ? _buildNoResultsState()
                         : TabBarView(
                             controller: _tabController,
@@ -189,10 +301,91 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                               
                               // Onglet Albums
                               _buildAlbumResults(),
+                              
+                              // Onglet Livres
+                              _buildBookResults(),
                             ],
                           ),
           ),
         ],
+      ),
+    );
+  }
+  
+  // Widget pour construire le menu déroulant de genre approprié à l'onglet actuel
+  Widget _buildGenreDropdown() {
+    switch (_tabController.index) {
+      case 0: // Films
+        return _buildDropdown(
+          _movieGenres,
+          _selectedMovieGenre,
+          (String? value) {
+            setState(() {
+              _selectedMovieGenre = value;
+              _applyFilters();
+            });
+          },
+          'Filtrer par genre de film',
+        );
+      case 1: // Albums
+        return _buildDropdown(
+          _albumGenres,
+          _selectedAlbumGenre,
+          (String? value) {
+            setState(() {
+              _selectedAlbumGenre = value;
+              _applyFilters();
+            });
+          },
+          'Filtrer par genre musical',
+        );
+      case 2: // Livres
+        return _buildDropdown(
+          _bookGenres,
+          _selectedBookGenre,
+          (String? value) {
+            setState(() {
+              _selectedBookGenre = value;
+              _applyFilters();
+            });
+          },
+          'Filtrer par genre littéraire',
+        );
+      default:
+        return const SizedBox();
+    }
+  }
+  
+  // Méthode générique pour construire un menu déroulant
+  Widget _buildDropdown(
+    List<String> items,
+    String? selectedValue,
+    void Function(String?) onChanged,
+    String hint
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color.fromARGB(249, 52, 73, 94),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButton<String>(
+        value: selectedValue,
+        icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+        iconSize: 24,
+        elevation: 16,
+        dropdownColor: const Color.fromARGB(255, 60, 75, 90),
+        style: const TextStyle(color: Colors.white),
+        isExpanded: true,
+        underline: const SizedBox(),
+        hint: Text(hint, style: const TextStyle(color: Colors.white70)),
+        onChanged: onChanged,
+        items: items.map<DropdownMenuItem<String>>((String value) {
+          return DropdownMenuItem<String>(
+            value: value,
+            child: Text(value),
+          );
+        }).toList(),
       ),
     );
   }
@@ -210,7 +403,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 16),
           Text(
-            'Recherchez un film ou un album',
+            'Recherchez un film, un album ou un livre',
             style: TextStyle(
               color: Colors.white.withOpacity(0.6),
               fontSize: 16,
@@ -248,7 +441,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   
   // Construction de la grille de résultats de films
   Widget _buildMovieResults() {
-    if (_movieResults.isEmpty) {
+    if (_filteredMovieResults.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -260,7 +453,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 16),
             Text(
-              'Aucun film trouvé pour "${_searchController.text}"',
+              _selectedMovieGenre == null
+                  ? 'Aucun film trouvé pour "${_searchController.text}"'
+                  : 'Aucun film de genre "$_selectedMovieGenre" trouvé pour "${_searchController.text}"',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.6),
                 fontSize: 16,
@@ -280,11 +475,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         crossAxisSpacing: 16.0,
         mainAxisSpacing: 16.0,
       ),
-      itemCount: _movieResults.length,
+      itemCount: _filteredMovieResults.length,
       itemBuilder: (context, index) {
-        final movie = _movieResults[index];
+        final movie = _filteredMovieResults[index];
         return GestureDetector(
-          // Ajouter la navigation vers la page de détails
           onTap: () {
             Navigator.push(
               context,
@@ -344,7 +538,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   
   // Construction de la grille de résultats d'albums
   Widget _buildAlbumResults() {
-    if (_albumResults.isEmpty) {
+    if (_filteredAlbumResults.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -356,7 +550,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 16),
             Text(
-              'Aucun album trouvé pour "${_searchController.text}"',
+              _selectedAlbumGenre == null
+                  ? 'Aucun album trouvé pour "${_searchController.text}"'
+                  : 'Aucun album de genre "$_selectedAlbumGenre" trouvé pour "${_searchController.text}"',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.6),
                 fontSize: 16,
@@ -376,19 +572,17 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         crossAxisSpacing: 16.0,
         mainAxisSpacing: 16.0,
       ),
-      itemCount: _albumResults.length,
+      itemCount: _filteredAlbumResults.length,
       itemBuilder: (context, index) {
-        final album = _albumResults[index];
+        final album = _filteredAlbumResults[index];
         return GestureDetector(
           onTap: () {
-            // Navigation améliorée vers la page de détails de l'album
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => CdDetailsPage(album: album),
               ),
             ).then((_) {
-              // Rafraîchir l'état de la recherche lorsqu'on revient
               if (_searchController.text.isNotEmpty) {
                 _searchResults(_searchController.text);
               }
@@ -432,7 +626,121 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             ],
           ),
         );
-       },
+      },
+    );
+  }
+  
+  // Construction de la grille de résultats de livres
+  Widget _buildBookResults() {
+    if (_filteredBookResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.book_outlined,
+              size: 80,
+              color: Colors.white.withOpacity(0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _selectedBookGenre == null
+                  ? 'Aucun livre trouvé pour "${_searchController.text}"'
+                  : 'Aucun livre de genre "$_selectedBookGenre" trouvé pour "${_searchController.text}"',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return GridView.builder(
+      padding: const EdgeInsets.all(16.0),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.65,
+        crossAxisSpacing: 16.0,
+        mainAxisSpacing: 16.0,
+      ),
+      itemCount: _filteredBookResults.length,
+      itemBuilder: (context, index) {
+        final book = _filteredBookResults[index];
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookDetailsPage(book: book),
+              ),
+            ).then((_) {
+              if (_searchController.text.isNotEmpty) {
+                _searchResults(_searchController.text);
+              }
+            });
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8.0),
+                  child: book.coverUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: book.coverUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          placeholder: (context, url) => Container(
+                            color: Colors.grey[800],
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Container(
+                            color: Colors.grey[800],
+                            child: const Center(
+                              child: Icon(Icons.book, size: 40, color: Colors.white70),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          color: Colors.grey[800],
+                          child: const Center(
+                            child: Icon(Icons.book, size: 40, color: Colors.white70),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                book.title,
+                style: GoogleFonts.roboto(
+                  fontSize: 14, 
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                book.author,
+                style: GoogleFonts.roboto(
+                  fontSize: 12,
+                  color: Colors.white70,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

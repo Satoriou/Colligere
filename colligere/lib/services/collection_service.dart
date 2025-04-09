@@ -15,7 +15,7 @@ class CollectionService {
     String path = join(await getDatabasesPath(), 'collection_database.db');
     return await openDatabase(
       path,
-      version: 3, // Increased version for favorites tables
+      version: 4, // Increased version for books tables
       onCreate: (Database db, int version) async {
         await db.execute(
           'CREATE TABLE collection('
@@ -40,6 +40,19 @@ class CollectionService {
           'addedDate TEXT)'
         );
 
+        // Create book collection table
+        await db.execute(
+          'CREATE TABLE book_collection('
+          'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+          'userEmail TEXT, '
+          'bookId TEXT, '
+          'title TEXT, '
+          'author TEXT, '
+          'coverUrl TEXT, '
+          'format TEXT, '
+          'addedDate TEXT)'
+        );
+
         // Create favorites tables
         await db.execute(
           'CREATE TABLE movie_favorites('
@@ -59,6 +72,17 @@ class CollectionService {
           'albumName TEXT, '
           'artist TEXT, '
           'imageUrl TEXT, '
+          'addedDate TEXT)'
+        );
+        
+        await db.execute(
+          'CREATE TABLE book_favorites('
+          'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+          'userEmail TEXT, '
+          'bookId TEXT, '
+          'title TEXT, '
+          'author TEXT, '
+          'coverUrl TEXT, '
           'addedDate TEXT)'
         );
       },
@@ -97,6 +121,32 @@ class CollectionService {
             'albumName TEXT, '
             'artist TEXT, '
             'imageUrl TEXT, '
+            'addedDate TEXT)'
+          );
+        }
+
+        if (oldVersion < 4) {
+          // Add books tables
+          await db.execute(
+            'CREATE TABLE book_collection('
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            'userEmail TEXT, '
+            'bookId TEXT, '
+            'title TEXT, '
+            'author TEXT, '
+            'coverUrl TEXT, '
+            'format TEXT, '
+            'addedDate TEXT)'
+          );
+          
+          await db.execute(
+            'CREATE TABLE book_favorites('
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            'userEmail TEXT, '
+            'bookId TEXT, '
+            'title TEXT, '
+            'author TEXT, '
+            'coverUrl TEXT, '
             'addedDate TEXT)'
           );
         }
@@ -184,6 +234,47 @@ class CollectionService {
     }
   }
 
+  Future<bool> addBookToCollection(
+    String userEmail,
+    String bookId,
+    String title,
+    String author,
+    String coverUrl,
+    String format
+  ) async {
+    try {
+      final db = await database;
+      
+      // Check if book already exists with this format in collection
+      final List<Map<String, dynamic>> existingItems = await db.query(
+        'book_collection',
+        where: 'userEmail = ? AND bookId = ? AND format = ?',
+        whereArgs: [userEmail, bookId, format],
+      );
+
+      if (existingItems.isNotEmpty) {
+        return false; // Item already exists
+      }
+
+      await db.insert(
+        'book_collection',
+        {
+          'userEmail': userEmail,
+          'bookId': bookId,
+          'title': title,
+          'author': author,
+          'coverUrl': coverUrl,
+          'format': format,
+          'addedDate': DateTime.now().toIso8601String(),
+        },
+      );
+      return true;
+    } catch (e) {
+      print('Error adding book to collection: $e');
+      return false;
+    }
+  }
+
   Future<List<CollectionItem>> getUserCollection(String userEmail) async {
     try {
       final db = await database;
@@ -208,21 +299,6 @@ class CollectionService {
     } catch (e) {
       print('Error getting user collection: $e');
       return [];
-    }
-  }
-
-  Future<bool> removeFromCollection(int id) async {
-    try {
-      final db = await database;
-      await db.delete(
-        'collection',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      return true;
-    } catch (e) {
-      print('Error removing from collection: $e');
-      return false;
     }
   }
 
@@ -255,6 +331,50 @@ class CollectionService {
     }
   }
 
+  Future<List<dynamic>> getUserBookCollection(String userEmail) async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'book_collection',
+        where: 'userEmail = ?',
+        whereArgs: [userEmail],
+        orderBy: 'addedDate DESC',
+      );
+
+      return maps.map((item) {
+        return {
+          'id': item['id'],
+          'userEmail': item['userEmail'],
+          'bookId': item['bookId'],
+          'title': item['title'],
+          'author': item['author'],
+          'coverUrl': item['coverUrl'],
+          'format': item['format'],
+          'addedDate': DateTime.parse(item['addedDate']),
+          'type': 'book'
+        };
+      }).toList();
+    } catch (e) {
+      print('Error getting user book collection: $e');
+      return [];
+    }
+  }
+
+  Future<bool> removeFromCollection(int id) async {
+    try {
+      final db = await database;
+      await db.delete(
+        'collection',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return true;
+    } catch (e) {
+      print('Error removing from collection: $e');
+      return false;
+    }
+  }
+
   Future<bool> removeAlbumFromCollection(int id) async {
     try {
       final db = await database;
@@ -270,10 +390,26 @@ class CollectionService {
     }
   }
 
+  Future<bool> removeBookFromCollection(int id) async {
+    try {
+      final db = await database;
+      await db.delete(
+        'book_collection',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return true;
+    } catch (e) {
+      print('Error removing book from collection: $e');
+      return false;
+    }
+  }
+
   Future<List<dynamic>> getFullUserCollection(String userEmail) async {
-    // Get both movies and albums
+    // Get movies, albums and books
     final movies = await getUserCollection(userEmail);
     final albums = await getUserAlbumCollection(userEmail);
+    final books = await getUserBookCollection(userEmail);
     
     // Convert movies to the same format as albums for consistency
     final formattedMovies = movies.map((movie) => {
@@ -288,7 +424,7 @@ class CollectionService {
     }).toList();
     
     // Return combined list
-    return [...formattedMovies, ...albums];
+    return [...formattedMovies, ...albums, ...books];
   }
 
   // ===== FAVORITES METHODS =====
@@ -485,12 +621,109 @@ class CollectionService {
       return [];
     }
   }
+
+  // Book favorites methods
+  Future<bool> addBookToFavorites(
+    String userEmail,
+    String bookId,
+    String title,
+    String author,
+    String coverUrl,
+  ) async {
+    try {
+      final db = await database;
+      
+      // Check if book already exists in favorites
+      final List<Map<String, dynamic>> existingItems = await db.query(
+        'book_favorites',
+        where: 'userEmail = ? AND bookId = ?',
+        whereArgs: [userEmail, bookId],
+      );
+
+      if (existingItems.isNotEmpty) {
+        return false; // Already favorited
+      }
+
+      await db.insert(
+        'book_favorites',
+        {
+          'userEmail': userEmail,
+          'bookId': bookId,
+          'title': title,
+          'author': author,
+          'coverUrl': coverUrl,
+          'addedDate': DateTime.now().toIso8601String(),
+        },
+      );
+      return true;
+    } catch (e) {
+      print('Error adding book to favorites: $e');
+      return false;
+    }
+  }
   
-  // Get all favorites (movies and albums)
+  Future<bool> removeBookFromFavorites(
+    String userEmail,
+    String bookId,
+  ) async {
+    try {
+      final db = await database;
+      final count = await db.delete(
+        'book_favorites',
+        where: 'userEmail = ? AND bookId = ?',
+        whereArgs: [userEmail, bookId],
+      );
+      return count > 0;
+    } catch (e) {
+      print('Error removing book from favorites: $e');
+      return false;
+    }
+  }
+  
+  Future<bool> isBookFavorite(
+    String userEmail,
+    String bookId,
+  ) async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> result = await db.query(
+        'book_favorites',
+        where: 'userEmail = ? AND bookId = ?',
+        whereArgs: [userEmail, bookId],
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      print('Error checking if book is favorite: $e');
+      return false;
+    }
+  }
+  
+  Future<List<Map<String, dynamic>>> getFavoriteBooks(String userEmail) async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'book_favorites',
+        where: 'userEmail = ?',
+        whereArgs: [userEmail],
+        orderBy: 'addedDate DESC',
+      );
+      
+      return maps.map((item) => {
+        ...item,
+        'type': 'book'
+      }).toList();
+    } catch (e) {
+      print('Error getting favorite books: $e');
+      return [];
+    }
+  }
+  
+  // Get all favorites (movies, albums and books)
   Future<List<Map<String, dynamic>>> getAllFavorites(String userEmail) async {
     final movies = await getFavoriteMovies(userEmail);
     final albums = await getFavoriteAlbums(userEmail);
-    return [...movies, ...albums];
+    final books = await getFavoriteBooks(userEmail);
+    return [...movies, ...albums, ...books];
   }
 
   // Méthode pour fermer la base de données

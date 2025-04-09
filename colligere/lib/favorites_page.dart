@@ -4,8 +4,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:colligere/movie_details_page.dart';
 import 'package:colligere/cd_details_page.dart';
+import 'package:colligere/book_details_page.dart';
 import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
+import 'package:colligere/model/model_book.dart';
 import 'package:colligere/api/api.dart';
 import 'package:colligere/api/spotify_api.dart';
 
@@ -26,7 +28,7 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _getUserInfo();
   }
   
@@ -57,6 +59,7 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
           tabs: const [
             Tab(text: 'Films', icon: Icon(Icons.movie)),
             Tab(text: 'Albums', icon: Icon(Icons.album)),
+            Tab(text: 'Livres', icon: Icon(Icons.book)),
           ],
         ),
       ),
@@ -67,18 +70,33 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
           _buildFavoritesList('movie'),
           // Albums tab
           _buildFavoritesList('album'),
+          // Books tab
+          _buildFavoritesList('book'),
         ],
       ),
     );
   }
 
   Widget _buildFavoritesList(String type) {
+    Future<List<Map<String, dynamic>>> futureToUse;
+    switch (type) {
+      case 'movie':
+        futureToUse = _collectionService.getFavoriteMovies(_userEmail);
+        break;
+      case 'album':
+        futureToUse = _collectionService.getFavoriteAlbums(_userEmail);
+        break;
+      case 'book':
+        futureToUse = _collectionService.getFavoriteBooks(_userEmail);
+        break;
+      default:
+        futureToUse = Future.value([]);
+    }
+    
     return RefreshIndicator(
       onRefresh: _refreshFavorites,
       child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: type == 'movie' 
-            ? _collectionService.getFavoriteMovies(_userEmail) 
-            : _collectionService.getFavoriteAlbums(_userEmail),
+        future: futureToUse,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -88,8 +106,10 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
             return Center(
               child: Text(
                 type == 'movie' 
-                    ? 'Aucun film dans vos favoris' 
-                    : 'Aucun album dans vos favoris'
+                    ? 'Aucun film dans vos favoris'
+                    : type == 'album'
+                        ? 'Aucun album dans vos favoris'
+                        : 'Aucun livre dans vos favoris'
               ),
             );
           } else {
@@ -100,8 +120,10 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
                 
                 if (type == 'movie') {
                   return _buildMovieItem(item);
-                } else {
+                } else if (type == 'album') {
                   return _buildAlbumItem(item);
+                } else {
+                  return _buildBookItem(item);
                 }
               },
             );
@@ -209,6 +231,58 @@ class _FavoritesPageState extends State<FavoritesPage> with SingleTickerProvider
             setState(() {});
           } catch (e) {
             print('Error navigating to album details: $e');
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildBookItem(Map<String, dynamic> book) {
+    return Card(
+      margin: const EdgeInsets.all(8.0),
+      child: ListTile(
+        leading: book['coverUrl']?.isNotEmpty ?? false
+            ? CachedNetworkImage(
+                imageUrl: book['coverUrl'],
+                width: 50,
+                placeholder: (context, url) => const CircularProgressIndicator(),
+                errorWidget: (context, url, error) => const Icon(Icons.book),
+              )
+            : const Icon(Icons.book, size: 50),
+        title: Text(book['title'] ?? 'Unknown Book'),
+        subtitle: Text(book['author'] ?? 'Unknown Author'),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete),
+          onPressed: () async {
+            await _collectionService.removeBookFromFavorites(
+              _userEmail, 
+              book['bookId']
+            );
+            setState(() {});
+          },
+        ),
+        onTap: () async {
+          // Navigate to book details
+          try {
+            final bookDetails = Book(
+              id: book['bookId'],
+              title: book['title'],
+              author: book['author'],
+              coverUrl: book['coverUrl'],
+              publishDate: '',
+            );
+            
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookDetailsPage(book: bookDetails)
+              ),
+            );
+            
+            // Refresh on return
+            setState(() {});
+          } catch (e) {
+            print('Error navigating to book details: $e');
           }
         },
       ),

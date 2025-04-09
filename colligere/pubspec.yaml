@@ -24,6 +24,7 @@ dependencies:
   # spotify_sdk: ^2.3.1  # Commenté temporairement
   spotify: ^0.12.0
   flutter_secure_storage: ^8.0.0
+  image_picker: ^1.0.7
 
 
   cupertino_icons: ^1.0.8

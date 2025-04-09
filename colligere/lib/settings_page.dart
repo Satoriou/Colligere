@@ -5,9 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'main.dart';
-import 'logout.dart';
+import 'package:colligere/utils/logout_helper.dart';
 import 'package:flutter/foundation.dart';
 import 'database_helper.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -21,6 +23,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late String username = '';
   late Database _database;
   bool _isLoading = true;
+  String? _profileImagePath;
 
   // Contrôleurs pour les formulaires
   final TextEditingController _usernameController = TextEditingController();
@@ -57,6 +60,7 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       String email = prefs.getString('userEmail') ?? '';
+      _profileImagePath = prefs.getString('profileImagePath');
 
       if (email.isEmpty) {
         setState(() => _isLoading = false);
@@ -93,6 +97,7 @@ class _SettingsPageState extends State<SettingsPage> {
         content: Text(message),
         behavior: SnackBarBehavior.floating,
         backgroundColor: Colors.black87,
+        margin: const EdgeInsets.all(20),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
@@ -147,6 +152,23 @@ class _SettingsPageState extends State<SettingsPage> {
     });
 
     _showMessage('Nom d\'utilisateur mis à jour avec succès');
+  }
+
+  // Méthode pour changer la photo de profil
+  Future<void> _changeProfileImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('profileImagePath', image.path);
+      
+      setState(() {
+        _profileImagePath = image.path;
+      });
+      
+      _showMessage('Photo de profil mise à jour');
+    }
   }
 
   // Méthode pour mettre à jour le mot de passe
@@ -280,244 +302,357 @@ class _SettingsPageState extends State<SettingsPage> {
         foregroundColor: const Color.fromARGB(255, 245, 238, 248),
         title: const Text("Paramètres"),
         centerTitle: true,
+        elevation: 0,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Section info utilisateur
-                  Card(
-                    color: const Color.fromARGB(249, 52, 73, 94).withOpacity(0.5),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Informations du compte',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ListTile(
-                            title: const Text('Email', style: TextStyle(color: Colors.white70)),
-                            subtitle: Text(userEmail, style: const TextStyle(color: Colors.white)),
-                            leading: const Icon(Icons.email, color: Colors.white70),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          const Divider(color: Colors.white24),
-                          const Text(
-                            'Modifier le nom d\'utilisateur',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _usernameController,
-                            decoration: InputDecoration(
-                              labelText: 'Nouveau nom d\'utilisateur',
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide.none,
+                  // En-tête avec info utilisateur
+                  Container(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: _changeProfileImage,
+                          child: Stack(
+                            children: [
+                              _profileImagePath != null
+                                ? CircleAvatar(
+                                    radius: 50,
+                                    backgroundImage: FileImage(File(_profileImagePath!)),
+                                  )
+                                : const CircleAvatar(
+                                    radius: 50,
+                                    backgroundColor: Colors.white24,
+                                    child: Icon(
+                                      Icons.person,
+                                      size: 50,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
                               ),
-                            ),
-                            style: const TextStyle(color: Colors.white),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _updateUsername,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color.fromARGB(249, 52, 73, 94),
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 48),
-                            ),
-                            child: const Text('Mettre à jour le nom d\'utilisateur'),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          username,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
-                        ],
+                        ),
+                        Text(
+                          userEmail,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const Divider(height: 1, thickness: 0.5, color: Colors.white10),
+                  
+                  // Section Compte
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+                    child: Text(
+                      'Compte',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white70,
                       ),
                     ),
                   ),
+                  
+                  // Modifier le nom d'utilisateur
+                  _buildSettingItem(
+                    icon: Icons.person_outline,
+                    title: 'Nom d\'utilisateur',
+                    onTap: () => _showUsernameDialog(),
+                  ),
+                  
+                  // Modifier le mot de passe
+                  _buildSettingItem(
+                    icon: Icons.lock_outline,
+                    title: 'Changer le mot de passe',
+                    onTap: () => _showPasswordDialog(),
+                  ),
 
-                  const SizedBox(height: 16),
+                  // Modifier la photo de profil
+                  _buildSettingItem(
+                    icon: Icons.image_outlined,
+                    title: 'Changer la photo de profil',
+                    onTap: _changeProfileImage,
+                  ),
 
-                  // Section changement de mot de passe
-                  Card(
-                    color: const Color.fromARGB(249, 52, 73, 94).withOpacity(0.5),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const Divider(height: 1, thickness: 0.5, color: Colors.white10),
+                  
+                  // Section Debug (en mode debug seulement)
+                  if (kDebugMode) ...[
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+                      child: Text(
+                        'Développement',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        ),
+                      ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Changer le mot de passe',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _currentPasswordController,
-                            decoration: InputDecoration(
-                              labelText: 'Mot de passe actuel',
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            obscureText: true,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _newPasswordController,
-                            decoration: InputDecoration(
-                              labelText: 'Nouveau mot de passe',
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            obscureText: true,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _confirmPasswordController,
-                            decoration: InputDecoration(
-                              labelText: 'Confirmer le nouveau mot de passe',
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            obscureText: true,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _updatePassword,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color.fromARGB(249, 52, 73, 94),
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 48),
-                            ),
-                            child: const Text('Changer le mot de passe'),
-                          ),
-                        ],
+                    _buildSettingItem(
+                      icon: Icons.bug_report,
+                      title: 'Outils de base de données',
+                      onTap: () => DatabaseHelper.showDatabaseUtilityDialog(context),
+                    ),
+                    const Divider(height: 1, thickness: 0.5, color: Colors.white10),
+                  ],
+
+                  // Section Danger
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+                    child: Text(
+                      'Danger',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.red,
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // Section suppression de compte
-                  Card(
-                    color: Colors.redAccent.withOpacity(0.2),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Zone dangereuse',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'La suppression de votre compte est irréversible.',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _deletePasswordController,
-                            decoration: InputDecoration(
-                              labelText: 'Entrez votre mot de passe pour confirmer',
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            obscureText: true,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _deleteAccount,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 48),
-                            ),
-                            child: const Text('Supprimer mon compte'),
-                          ),
-                        ],
-                      ),
-                    ),
+                  
+                  // Supprimer le compte
+                  _buildSettingItem(
+                    icon: Icons.delete_outline,
+                    title: 'Supprimer mon compte',
+                    textColor: Colors.red,
+                    onTap: () => _showDeleteAccountDialog(),
                   ),
-
-                  const SizedBox(height: 24),
-
-                  // Add Debug Section in debug mode
-                  if (kDebugMode)
-                    ListTile(
-                      title: const Text('Database Utils', style: TextStyle(color: Colors.white)),
-                      leading: const Icon(Icons.bug_report, color: Colors.redAccent),
-                      onTap: () {
-                        DatabaseHelper.showDatabaseUtilityDialog(context);
-                      },
-                    ),
-
-                  // Bouton de déconnexion
-                  ElevatedButton.icon(
-                    onPressed: () => logout(context),
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Déconnexion'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[700],
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
+                  
+                  // Déconnexion
+                  _buildSettingItem(
+                    icon: Icons.logout,
+                    title: 'Déconnexion',
+                    textColor: Colors.white70,
+                    onTap: () => LogoutHelper.logout(context),
                   ),
+                  
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
+    );
+  }
+  
+  Widget _buildSettingItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? textColor,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 20.0),
+        child: Row(
+          children: [
+            Icon(icon, color: textColor ?? Colors.white, size: 24),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: textColor ?? Colors.white,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: Colors.white.withOpacity(0.5),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Dialogues
+  void _showUsernameDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+        title: const Text('Modifier le nom d\'utilisateur', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: _usernameController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white.withOpacity(0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              _updateUsername();
+              Navigator.pop(context);
+            },
+            child: const Text('Enregistrer', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+        title: const Text('Changer le mot de passe', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _currentPasswordController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Mot de passe actuel',
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _newPasswordController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Nouveau mot de passe',
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _confirmPasswordController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Confirmer le nouveau mot de passe',
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              _updatePassword();
+              Navigator.pop(context);
+            },
+            child: const Text('Enregistrer', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+        title: const Text('Supprimer le compte', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Cette action est irréversible. Toutes vos données seront supprimées définitivement.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _deletePasswordController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Entrez votre mot de passe pour confirmer',
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              _deleteAccount();
+              Navigator.pop(context);
+            },
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 }
