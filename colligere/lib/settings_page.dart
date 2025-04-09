@@ -7,9 +7,9 @@ import 'dart:convert';
 import 'main.dart';
 import 'package:colligere/utils/logout_helper.dart';
 import 'package:flutter/foundation.dart';
-import 'database_helper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:colligere/utils/database_helper.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -24,6 +24,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late Database _database;
   bool _isLoading = true;
   String? _profileImagePath;
+  final ImagePicker _picker = ImagePicker();
 
   // Contrôleurs pour les formulaires
   final TextEditingController _usernameController = TextEditingController();
@@ -60,7 +61,8 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       String email = prefs.getString('userEmail') ?? '';
-      _profileImagePath = prefs.getString('profileImagePath');
+      // Utiliser l'email de l'utilisateur comme partie de la clé pour charger la photo
+      _profileImagePath = prefs.getString('profileImagePath_$email');
 
       if (email.isEmpty) {
         setState(() => _isLoading = false);
@@ -109,9 +111,9 @@ class _SettingsPageState extends State<SettingsPage> {
     return sha256.convert(utf8.encode(password)).toString();
   }
 
-  // Méthode pour mettre à jour le nom d'utilisateur
+  // Version corrigée utilisant DatabaseHelper avec gestion d'erreurs améliorée
   Future<void> _updateUsername() async {
-    String newUsername = _usernameController.text;
+    String newUsername = _usernameController.text.trim();
 
     if (newUsername.isEmpty || newUsername.length < 3) {
       _showMessage('Le nom d\'utilisateur doit contenir au moins 3 caractères');
@@ -135,50 +137,66 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
 
-    // Mettre à jour dans la base de données
-    await _database.update(
-      'users',
-      {'username': newUsername},
-      where: 'email = ?',
-      whereArgs: [userEmail],
-    );
-
-    // Mettre à jour dans les préférences partagées
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('username', newUsername);
-
-    setState(() {
-      username = newUsername;
-    });
-
-    _showMessage('Nom d\'utilisateur mis à jour avec succès');
-  }
-
-  // Méthode pour changer la photo de profil
-  Future<void> _changeProfileImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (image != null) {
+    try {
+      // Utiliser la méthode statique de DatabaseHelper pour changer le nom d'utilisateur
+      await DatabaseHelper.changeUsername(userEmail, newUsername);
+      
+      // Mise à jour des préférences seulement après réussite de la mise à jour de la BD
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('profileImagePath', image.path);
-      
+      await prefs.setString('username', newUsername);
+
       setState(() {
-        _profileImagePath = image.path;
+        username = newUsername;
       });
+
+      _showMessage('Nom d\'utilisateur mis à jour avec succès');
       
-      _showMessage('Photo de profil mise à jour');
+      // Afficher le dialogue pour se déconnecter
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+            title: const Text('Nom d\'utilisateur mis à jour', style: TextStyle(color: Colors.white)),
+            content: const Text(
+              'Votre nom d\'utilisateur a été mis à jour. Pour utiliser votre nouveau nom d\'utilisateur à la connexion, vous devez vous déconnecter puis vous reconnecter.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Plus tard', style: TextStyle(color: Colors.white70)),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  LogoutHelper.logout(context);
+                },
+                child: const Text('Se déconnecter', style: TextStyle(color: Colors.blue)),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('Erreur lors de la mise à jour du nom d\'utilisateur: $e');
+      _showMessage('Erreur lors de la mise à jour: ${e.toString()}');
     }
   }
 
-  // Méthode pour mettre à jour le mot de passe
+  // Méthode pour mettre à jour le mot de passe utilisant DatabaseHelper
   Future<void> _updatePassword() async {
-    String currentPassword = _currentPasswordController.text;
-    String newPassword = _newPasswordController.text;
-    String confirmPassword = _confirmPasswordController.text;
+    final currentPassword = _currentPasswordController.text;
+    final newPassword = _newPasswordController.text;
+    final confirmPassword = _confirmPasswordController.text;
 
     if (currentPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty) {
-      _showMessage('Veuillez remplir tous les champs');
+      _showMessage('Tous les champs doivent être remplis');
+      return;
+    }
+
+    if (newPassword != confirmPassword) {
+      _showMessage('Les nouveaux mots de passe ne correspondent pas');
       return;
     }
 
@@ -187,109 +205,230 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
 
-    if (newPassword != confirmPassword) {
-      _showMessage('Les mots de passe ne correspondent pas');
-      return;
-    }
-
-    // Vérifier le mot de passe actuel
-    String hashedCurrentPassword = _hashPassword(currentPassword);
-    List<Map<String, dynamic>> user = await _database.query(
+    // Vérifier l'ancien mot de passe
+    final hashedCurrentPassword = _hashPassword(currentPassword);
+    List<Map<String, dynamic>> result = await _database.query(
       'users',
       where: 'email = ? AND password = ?',
       whereArgs: [userEmail, hashedCurrentPassword],
     );
 
-    if (user.isEmpty) {
+    if (result.isEmpty) {
       _showMessage('Mot de passe actuel incorrect');
       return;
     }
 
-    // Mettre à jour le mot de passe
-    String hashedNewPassword = _hashPassword(newPassword);
-    await _database.update(
-      'users',
-      {'password': hashedNewPassword},
-      where: 'email = ?',
-      whereArgs: [userEmail],
-    );
+    try {
+      // Utiliser la méthode statique de DatabaseHelper pour changer le mot de passe
+      await DatabaseHelper.changePassword(userEmail, newPassword);
+      
+      // Réinitialiser les contrôleurs
+      _currentPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
 
-    _showMessage('Mot de passe mis à jour avec succès');
-
-    // Réinitialiser les champs
-    _currentPasswordController.clear();
-    _newPasswordController.clear();
-    _confirmPasswordController.clear();
+      _showMessage('Mot de passe mis à jour avec succès');
+    } catch (e) {
+      print('Erreur lors de la mise à jour du mot de passe: $e');
+      _showMessage('Erreur lors de la mise à jour: ${e.toString()}');
+    }
   }
 
   // Méthode pour supprimer le compte
   Future<void> _deleteAccount() async {
-    String password = _deletePasswordController.text;
+    final password = _deletePasswordController.text;
 
     if (password.isEmpty) {
-      _showMessage('Veuillez entrer votre mot de passe pour confirmer la suppression');
+      _showMessage('Veuillez entrer votre mot de passe pour confirmer');
       return;
     }
 
     // Vérifier le mot de passe
-    String hashedPassword = _hashPassword(password);
-    List<Map<String, dynamic>> user = await _database.query(
+    final hashedPassword = _hashPassword(password);
+    List<Map<String, dynamic>> result = await _database.query(
       'users',
       where: 'email = ? AND password = ?',
       whereArgs: [userEmail, hashedPassword],
     );
 
-    if (user.isEmpty) {
+    if (result.isEmpty) {
       _showMessage('Mot de passe incorrect');
       return;
     }
 
-    // Confirmer la suppression
-    bool? confirmDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
-        title: const Text('Supprimer le compte', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Cette action est irréversible. Tous vos données seront supprimées définitivement. Êtes-vous sûr de vouloir continuer?',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmDelete != true) {
-      return;
-    }
-
-    // Supprimer le compte de la base de données
+    // Supprimer le compte
     await _database.delete(
       'users',
       where: 'email = ?',
       whereArgs: [userEmail],
     );
 
-    // Supprimer les informations de connexion des préférences
+    // Supprimer les données des préférences
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
 
-    _showMessage('Votre compte a été supprimé');
+    // Retourner à l'écran de connexion
+    if (context.mounted) {
+      _showMessage('Compte supprimé avec succès');
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+    }
+  }
+  
+  // Méthode pour changer la photo de profil
+  Future<void> _changeProfileImage() async {
+    try {
+      // Afficher une boîte de dialogue pour choisir entre la caméra et la galerie
+      showModalBottomSheet(
+        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: Colors.white),
+                  title: const Text('Galerie de photos', style: TextStyle(color: Colors.white)),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await _pickImageFrom(ImageSource.gallery);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_camera, color: Colors.white),
+                  title: const Text('Appareil photo', style: TextStyle(color: Colors.white)),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await _pickImageFrom(ImageSource.camera);
+                  },
+                ),
+                if (_profileImagePath != null)
+                  ListTile(
+                    leading: const Icon(Icons.delete, color: Colors.red),
+                    title: const Text('Supprimer la photo', style: TextStyle(color: Colors.red)),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await _removeProfileImage();
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('Erreur dans _changeProfileImage: $e');
+      _showMessage('Erreur lors de l\'ouverture du sélecteur d\'image: $e');
+    }
+  }
+  
+  // Méthode auxiliaire pour sélectionner une image
+  Future<void> _pickImageFrom(ImageSource source) async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        print('Image sélectionnée: ${pickedFile.path}');
+        
+        // Vérifier si le fichier existe
+        if (!File(pickedFile.path).existsSync()) {
+          _showMessage('Erreur: le fichier image n\'existe pas');
+          return;
+        }
+        
+        // Enregistrer le chemin de l'image avec une clé spécifique à l'utilisateur
+        final prefs = await SharedPreferences.getInstance();
+        // Utiliser l'email de l'utilisateur comme partie de la clé
+        await prefs.setString('profileImagePath_$userEmail', pickedFile.path);
+        
+        setState(() {
+          _profileImagePath = pickedFile.path;
+        });
+        
+        _showMessage('Photo de profil mise à jour');
+      } else {
+        print('Aucune image sélectionnée');
+      }
+    } catch (e) {
+      print('Erreur dans _pickImageFrom: $e');
+      _showMessage('Erreur lors de la sélection de l\'image: $e');
+    }
+  }
+  
+  // Méthode pour supprimer la photo de profil
+  Future<void> _removeProfileImage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Utiliser l'email de l'utilisateur comme partie de la clé
+      await prefs.remove('profileImagePath_$userEmail');
+      
+      setState(() {
+        _profileImagePath = null;
+      });
+      
+      _showMessage('Photo de profil supprimée');
+    } catch (e) {
+      print('Erreur dans _removeProfileImage: $e');
+      _showMessage('Erreur lors de la suppression de la photo: $e');
+    }
+  }
 
-    // Rediriger vers la page de connexion
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-      (route) => false,
+  // Méthode améliorée pour afficher la boîte de dialogue de changement de nom d'utilisateur
+  void _showUsernameDialog() {
+    _usernameController.text = username; // Remplir avec le nom d'utilisateur actuel
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false, // L'utilisateur doit utiliser les boutons
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
+        title: const Text('Modifier le nom d\'utilisateur', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _usernameController,
+              style: const TextStyle(color: Colors.white),
+              autofocus: true, // Mettre le focus automatiquement
+              decoration: InputDecoration(
+                labelText: 'Nouveau nom d\'utilisateur',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Le nom d\'utilisateur doit contenir au moins 3 caractères.',
+              style: TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _updateUsername(); // Appeler _updateUsername après fermeture de la boîte de dialogue
+            },
+            child: const Text('Enregistrer', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -319,20 +458,20 @@ class _SettingsPageState extends State<SettingsPage> {
                           onTap: _changeProfileImage,
                           child: Stack(
                             children: [
-                              _profileImagePath != null
-                                ? CircleAvatar(
-                                    radius: 50,
-                                    backgroundImage: FileImage(File(_profileImagePath!)),
-                                  )
-                                : const CircleAvatar(
-                                    radius: 50,
-                                    backgroundColor: Colors.white24,
-                                    child: Icon(
+                              CircleAvatar(
+                                radius: 50,
+                                backgroundColor: Colors.white24,
+                                backgroundImage: _profileImagePath != null && File(_profileImagePath!).existsSync()
+                                  ? FileImage(File(_profileImagePath!))
+                                  : null,
+                                child: _profileImagePath == null || !File(_profileImagePath!).existsSync()
+                                  ? const Icon(
                                       Icons.person,
                                       size: 50,
                                       color: Colors.white,
-                                    ),
-                                  ),
+                                    )
+                                  : null,
+                              ),
                               Positioned(
                                 bottom: 0,
                                 right: 0,
@@ -410,27 +549,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
                   const Divider(height: 1, thickness: 0.5, color: Colors.white10),
                   
-                  // Section Debug (en mode debug seulement)
-                  if (kDebugMode) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                      child: Text(
-                        'Développement',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
-                    _buildSettingItem(
-                      icon: Icons.bug_report,
-                      title: 'Outils de base de données',
-                      onTap: () => DatabaseHelper.showDatabaseUtilityDialog(context),
-                    ),
-                    const Divider(height: 1, thickness: 0.5, color: Colors.white10),
-                  ],
-
                   // Section Danger
                   const Padding(
                     padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -500,44 +618,12 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
-
-  // Dialogues
-  void _showUsernameDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color.fromARGB(255, 50, 65, 81),
-        title: const Text('Modifier le nom d\'utilisateur', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: _usernameController,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white.withOpacity(0.1),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
-          ),
-          TextButton(
-            onPressed: () {
-              _updateUsername();
-              Navigator.pop(context);
-            },
-            child: const Text('Enregistrer', style: TextStyle(color: Colors.blue)),
-          ),
-        ],
-      ),
-    );
-  }
   
   void _showPasswordDialog() {
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmPasswordController.clear();
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -552,6 +638,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Mot de passe actuel',
+                labelStyle: const TextStyle(color: Colors.white70),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.1),
                 border: OutlineInputBorder(
@@ -567,6 +654,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Nouveau mot de passe',
+                labelStyle: const TextStyle(color: Colors.white70),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.1),
                 border: OutlineInputBorder(
@@ -582,6 +670,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Confirmer le nouveau mot de passe',
+                labelStyle: const TextStyle(color: Colors.white70),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.1),
                 border: OutlineInputBorder(
@@ -610,6 +699,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
   
   void _showDeleteAccountDialog() {
+    _deletePasswordController.clear();
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -629,6 +720,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Entrez votre mot de passe pour confirmer',
+                labelStyle: const TextStyle(color: Colors.white70),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.1),
                 border: OutlineInputBorder(

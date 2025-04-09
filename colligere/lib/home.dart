@@ -6,7 +6,6 @@ import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
 import 'package:colligere/model/model_book.dart';
 import 'package:colligere/search_page.dart';
-import 'package:colligere/logout.dart';
 import 'package:colligere/settings_page.dart';
 import 'package:colligere/movie_details_page.dart';
 import 'package:colligere/cd_details_page.dart';
@@ -84,16 +83,29 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   Future<void> _getUserInfo() async {
-    final prefs = await SharedPreferences.getInstance();
-    final email = prefs.getString('userEmail') ?? '';
-    final name = prefs.getString('username') ?? email.split('@')[0];
-    final profileImagePath = prefs.getString('profileImagePath');
-    
-    setState(() {
-      userEmail = email;
-      username = name;
-      _profileImagePath = profileImagePath;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final email = prefs.getString('userEmail') ?? '';
+      final name = prefs.getString('username') ?? email.split('@')[0];
+      // Utiliser l'email comme partie de la clé pour récupérer la photo de profil spécifique à l'utilisateur
+      final profileImagePath = prefs.getString('profileImagePath_$email');
+      
+      // Vérifier si l'image existe avant de la définir
+      bool imageExists = false;
+      if (profileImagePath != null) {
+        final file = File(profileImagePath);
+        imageExists = await file.exists();
+        print('Chemin de l\'image pour $email: $profileImagePath, existe: $imageExists');
+      }
+      
+      setState(() {
+        userEmail = email;
+        username = name;
+        _profileImagePath = imageExists ? profileImagePath : null;
+      });
+    } catch (e) {
+      print('Erreur lors de la récupération des informations utilisateur: $e');
+    }
   }
 
   void _precacheMovieImages() async {
@@ -579,7 +591,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
             },
             icon: const Icon(Icons.search_rounded),
           ),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.notifications)),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -602,16 +613,46 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _profileImagePath != null
-                    ? CircleAvatar(
-                        radius: 30,
-                        backgroundImage: FileImage(File(_profileImagePath!)),
-                      )
-                    : const CircleAvatar(
-                        radius: 30,
-                        backgroundColor: Colors.white,
-                        child: Icon(Icons.person, size: 40, color: Colors.grey),
-                      ),
+                  GestureDetector(
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SettingsPage()),
+                      );
+                      _getUserInfo(); // Rafraîchir les données après retour
+                    },
+                    child: Stack(
+                      children: [
+                        _profileImagePath != null
+                          ? CircleAvatar(
+                              radius: 30,
+                              backgroundImage: FileImage(File(_profileImagePath!)),
+                              backgroundColor: Colors.white24,
+                            )
+                          : const CircleAvatar(
+                              radius: 30,
+                              backgroundColor: Colors.white24,
+                              child: Icon(Icons.person, size: 40, color: Colors.white),
+                            ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.edit,
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     username,
@@ -647,11 +688,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text("Paramètres"),
-              onTap: () {
-                Navigator.push(
+              onTap: () async {
+                // Attendre que la navigation se termine puis rafraîchir les données utilisateur
+                await Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const SettingsPage()),
                 );
+                // Rafraîchir les données utilisateur au retour de la page des paramètres
+                _getUserInfo();
               },
             ),
             ListTile(

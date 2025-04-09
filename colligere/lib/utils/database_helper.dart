@@ -57,6 +57,64 @@ class DatabaseHelper {
       print('Error creating sample users: $e');
     }
   }
+
+  static Future<void> changeUsername(String email, String newUsername) async {
+    try {
+      final db = await openDatabase(
+        Path.join(await getDatabasesPath(), 'login_database.db'),
+        version: 2,
+      );
+      
+      // Update the username for the given email
+      int result = await db.update(
+        'users',
+        {'username': newUsername},
+        where: 'email = ?',
+        whereArgs: [email],
+      );
+
+      await db.close();
+      
+      print('Username updated successfully for $email: $result rows affected');
+      
+      // Vérification que la mise à jour a bien été effectuée
+      if (result <= 0) {
+        throw Exception('Aucun utilisateur mis à jour');
+      }
+    } catch (e) {
+      print('Error updating username: $e');
+      throw e; // Propager l'erreur pour une meilleure gestion
+    }
+  }
+
+  static Future<void> changePassword(String email, String newPassword) async {
+    try {
+      final db = await openDatabase(
+        Path.join(await getDatabasesPath(), 'login_database.db'),
+        version: 2,
+      );
+      
+      // Update the password for the given email
+      int result = await db.update(
+        'users',
+        {'password': _hashPassword(newPassword)},
+        where: 'email = ?',
+        whereArgs: [email],
+      );
+
+      await db.close();
+      
+      print('Password updated successfully for $email: $result rows affected');
+      
+      // Vérification que la mise à jour a bien été effectuée
+      if (result <= 0) {
+        throw Exception('Aucun utilisateur mis à jour');
+      }
+    } catch (e) {
+      print('Error updating password: $e');
+      throw e; 
+    }
+  }
   
   // Display a database utility dialog
   static void showDatabaseUtilityDialog(BuildContext context) {

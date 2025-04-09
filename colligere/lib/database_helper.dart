@@ -123,6 +123,85 @@ class DatabaseHelper {
               },
               child: const Text('List All Users'),
             ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () async {
+                // Ajoutons un bouton pour tester la connexion avec le nom d'utilisateur
+                final usernameController = TextEditingController();
+                final passwordController = TextEditingController();
+                
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Test de connexion'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: usernameController,
+                          decoration: const InputDecoration(labelText: 'Nom d\'utilisateur ou email'),
+                        ),
+                        TextField(
+                          controller: passwordController,
+                          decoration: const InputDecoration(labelText: 'Mot de passe'),
+                          obscureText: true,
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final db = await openDatabase(
+                            Path.join(await getDatabasesPath(), 'login_database.db'),
+                          );
+                          
+                          final username = usernameController.text.trim();
+                          final password = passwordController.text;
+                          final hashedPassword = _hashPassword(password);
+                          
+                          // Recherche par email
+                          final usersByEmail = await db.query(
+                            'users',
+                            where: 'email = ? AND password = ?',
+                            whereArgs: [username, hashedPassword],
+                          );
+                          
+                          // Recherche par nom d'utilisateur
+                          final usersByUsername = await db.query(
+                            'users',
+                            where: 'username = ? AND password = ?',
+                            whereArgs: [username, hashedPassword],
+                          );
+                          
+                          await db.close();
+                          
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            
+                            if (usersByEmail.isNotEmpty || usersByUsername.isNotEmpty) {
+                              final user = usersByEmail.isNotEmpty ? usersByEmail.first : usersByUsername.first;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Connexion réussie - Email: ${user['email']}, Username: ${user['username']}')),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Échec de connexion - Identifiants incorrects')),
+                              );
+                            }
+                          }
+                        },
+                        child: const Text('Tester'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Test de connexion'),
+            ),
           ],
         ),
         actions: [
@@ -134,4 +213,6 @@ class DatabaseHelper {
       ),
     );
   }
+
+  static void changeUsername(String userEmail, String newUsername) {}
 }

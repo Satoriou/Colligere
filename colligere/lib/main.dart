@@ -170,12 +170,9 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
   // Méthode pour sauvegarder les informations de connexion
   Future<void> _saveLoginSession(String email, String username) async {
-    if (_rememberMe) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      await prefs.setString('userEmail', email);
-      await prefs.setString('username', username);
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('userEmail', email);
+    await prefs.setString('username', username);
   }
 
   // Méthode de connexion
@@ -187,24 +184,50 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     
     setState(() => _isLoading = true);
     
-    String emailOrUsername = _emailController.text;
-    String password = _hashPassword(_passwordController.text);
+    String emailOrUsername = _emailController.text.trim();
+    String hashedPassword = _hashPassword(_passwordController.text);
 
     try {
-      // Recherche par email ou par nom d'utilisateur
-      List<Map<String, dynamic>> result = await _database.query(
-        'users',
-        where: 'email = ? OR username = ?',
-        whereArgs: [emailOrUsername, emailOrUsername],
+      // DEBUG: Afficher le contenu de la base de données
+      List<Map<String, dynamic>> allUsers = await _database.rawQuery('SELECT * FROM users');
+      print('------- DEBUG: CONTENU DE LA BASE DE DONNÉES -------');
+      for (var user in allUsers) {
+        print('User: email=${user['email']}, username=${user['username']}');
+      }
+      print('-------------------------------------------------');
+      
+      // Recherche par email
+      List<Map<String, dynamic>> userByEmail = await _database.rawQuery(
+        'SELECT * FROM users WHERE email = ? AND password = ?',
+        [emailOrUsername, hashedPassword]
       );
-
-      if (result.isNotEmpty && result[0]['password'] == password) {
-        // Récupérer le nom d'utilisateur et l'email
-        final email = result[0]['email'] as String;
-        final username = result[0]['username'] as String? ?? email.split('@')[0];
-
-        // Sauvegarder la session si "Se souvenir de moi" est activé
-        await _saveLoginSession(email, username);
+      
+      // Recherche par nom d'utilisateur si aucun résultat par email
+      List<Map<String, dynamic>> userByUsername = [];
+      if (userByEmail.isEmpty) {
+        userByUsername = await _database.rawQuery(
+          'SELECT * FROM users WHERE username = ? AND password = ?',
+          [emailOrUsername, hashedPassword]
+        );
+        
+        print('Recherche par username: $emailOrUsername, Résultats: ${userByUsername.length}');
+      }
+      
+      // Combiner les résultats
+      List<Map<String, dynamic>> matchingUsers = [...userByEmail, ...userByUsername];
+      
+      if (matchingUsers.isNotEmpty) {
+        final user = matchingUsers[0];
+        final email = user['email'] as String;
+        final username = user['username'] as String? ?? email.split('@')[0];
+        
+        print('Connexion réussie: email=$email, username=$username');
+        
+        // Sauvegarder la session
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userEmail', email);
+        await prefs.setString('username', username);
+        await prefs.setBool('isLoggedIn', true);
         
         _showMessage('Connexion réussie');
         
@@ -217,8 +240,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         _showMessage('Identifiants incorrects');
       }
     } catch (e) {
-      print("Erreur de connexion: $e");
-      _showMessage('Une erreur est survenue. Veuillez réessayer.');
+      print('Erreur de connexion: $e');
+      _showMessage('Une erreur est survenue');
     } finally {
       setState(() => _isLoading = false);
     }

@@ -5,7 +5,6 @@ import 'package:colligere/movie_details_page.dart';
 import 'package:colligere/cd_details_page.dart';
 import 'package:colligere/book_details_page.dart';
 import 'package:colligere/api/api.dart';
-import 'package:colligere/api/spotify_api.dart';
 import 'package:colligere/model/model_movie.dart';
 import 'package:colligere/model/model_album.dart';
 import 'package:colligere/model/model_book.dart';
@@ -370,7 +369,6 @@ class _CollectionPageState extends State<CollectionPage> with SingleTickerProvid
         ),
         onTap: () async {
           try {
-            final SpotifyApi spotifyApi = SpotifyApi();
             final albumObj = Album(
               id: album['albumId'],
               name: album['albumName'],

@@ -128,54 +128,100 @@ class SpotifyApi {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['albums'] != null && data['albums']['items'] != null && data['albums']['items'].isNotEmpty) {
-          final albums = data['albums']['items'] as List;
+        // ...existing code...
+      }
+      
+      // Si l'API échoue, utiliser la recherche pour obtenir des albums spécifiques
+      return _getDynamicPopularAlbums();
+    } catch (e) {
+      print('Error getting popular albums: $e');
+      return _getDynamicPopularAlbums();
+    }
+  }
+  
+  // Nouvelle méthode pour obtenir dynamiquement des albums populaires
+  Future<List<Album>> _getDynamicPopularAlbums() async {
+    List<Album> albums = [];
+    
+    // Liste des albums populaires à rechercher par nom et artiste
+    final List<Map<String, String>> popularAlbums = [
+      {'name': 'Renaissance', 'artist': 'Beyoncé'},
+      {'name': 'Midnights', 'artist': 'Taylor Swift'},
+      {'name': 'Un Verano Sin Ti', 'artist': 'Bad Bunny'},
+      {'name': 'Flower Boy', 'artist': 'Tyler, The Creator'},
+      {'name': 'Dawn FM', 'artist': 'The Weeknd'},
+      {'name': 'SOS', 'artist': 'SZA'},
+      {'name': 'Heroes & Villains', 'artist': 'Metro Boomin'},
+      {'name': 'Harry\'s House', 'artist': 'Harry Styles'},
+      {'name': 'Utopia', 'artist': 'Travis Scott'},
+      {'name': 'GUTS', 'artist': 'Olivia Rodrigo'},
+    ];
+    
+    try {
+      final token = await _getAccessToken();
+      
+      // Effectuer une recherche pour chaque album
+      for (var album in popularAlbums) {
+        try {
+          // Rechercher l'album avec l'artiste pour plus de précision
+          final query = '${album['name']} artist:${album['artist']}';
+          final response = await http.get(
+            Uri.https(_baseUrl, '/$_apiVersion/search', {
+              'q': query,
+              'type': 'album',
+              'limit': '1'
+            }),
+            headers: {'Authorization': 'Bearer $token'},
+          );
           
-          // Remove duplicate albums by the same artist to ensure diversity
-          final Map<String, Album> uniqueArtistAlbums = {};
-          for (var album in albums) {
-            final artists = album['artists'] as List? ?? [];
-            final artistName = artists.isNotEmpty && artists[0]['name'] != null
-                ? artists[0]['name']
-                : 'Unknown Artist';
-                
-            // Only add one album per artist to ensure variety
-            if (!uniqueArtistAlbums.containsKey(artistName)) {
-              final images = album['images'] as List? ?? [];
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            if (data['albums'] != null && data['albums']['items'] != null && 
+                data['albums']['items'].isNotEmpty) {
+              final albumData = data['albums']['items'][0];
+              
+              final images = albumData['images'] as List? ?? [];
               String imageUrl = '';
               if (images.isNotEmpty && images[0]['url'] != null) {
                 imageUrl = images[0]['url'];
               }
               
-              uniqueArtistAlbums[artistName] = Album(
-                id: album['id'] ?? '',
-                name: album['name'] ?? 'Unknown',
-                artist: artistName,
+              final artists = albumData['artists'] as List? ?? [];
+              
+              albums.add(Album(
+                id: albumData['id'] ?? '',
+                name: albumData['name'] ?? album['name'] ?? 'Unknown',
+                artist: artists.isNotEmpty && artists[0]['name'] != null 
+                    ? artists[0]['name'] 
+                    : album['artist'] ?? 'Unknown Artist',
                 imageUrl: imageUrl,
-                releaseDate: album['release_date'] ?? '',
-              );
+                releaseDate: albumData['release_date'] ?? '',
+              ));
+              
+              // Ajouter un délai pour éviter le rate limiting
+              await Future.delayed(const Duration(milliseconds: 100));
             }
           }
-          
-          final albumsList = uniqueArtistAlbums.values.toList();
-          if (albumsList.isNotEmpty) {
-            return albumsList;
-          }
+        } catch (e) {
+          print('Error searching for album ${album['name']}: $e');
+          // Continue with the next album
         }
       }
-      
-      // If API call failed or returned empty results, return hardcoded popular albums
-      print('Using hardcoded popular albums');
-      return _getHardcodedPopularAlbums();
     } catch (e) {
-      print('Error getting popular albums: $e');
-      return _getHardcodedPopularAlbums();
+      print('Error in _getDynamicPopularAlbums: $e');
     }
+    
+    // Si nous n'avons pas pu obtenir assez d'albums, renvoyer une liste de secours
+    if (albums.length < 5) {
+      print('Not enough albums found via API, returning fallback albums');
+      return _getFallbackPopularAlbums();
+    }
+    
+    return albums;
   }
   
-  // Updated method to provide reliable hardcoded popular albums with verified image URLs
-  List<Album> _getHardcodedPopularAlbums() {
+  // Méthode de secours en cas d'échec total de l'API
+  List<Album> _getFallbackPopularAlbums() {
     return [
       Album(
         id: '5r36AJ6VOJtp00oxSkBZ5h',

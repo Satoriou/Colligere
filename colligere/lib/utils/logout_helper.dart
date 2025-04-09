@@ -1,54 +1,63 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
- // Assurez-vous que ce chemin est correct
-// Utilisez l'un de ces imports selon l'emplacement de votre fichier login_page.dart
-// import '../login_page.dart';
-import '../main.dart'; // Si LoginPage est définie dans main.dart
-// import 'package:colligere/login_page.dart'; // Import absolu si le fichier est à la racine de lib
+import '../main.dart';
 
 class LogoutHelper {
   static Future<void> logout(BuildContext context) async {
-    // Effacer les informations de connexion des préférences
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', false);
-    await prefs.remove('userEmail');
-    await prefs.remove('username');
-    
-    if (context.mounted) {
-      // Utiliser pushAndRemoveUntil pour effacer tout l'historique de navigation
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (route) => false, // Ne garde aucune route dans la pile
-      );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Conserver les données importantes pour le débogage
+      final email = prefs.getString('userEmail');
+      final username = prefs.getString('username');
+      print('Déconnexion - Email: $email, Username: $username');
+      
+      // Marquer l'utilisateur comme déconnecté mais conserver les identifiants
+      // pour faciliter la reconnexion
+      await prefs.setBool('isLoggedIn', false);
+      
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      print('Erreur lors de la déconnexion: $e');
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+          (route) => false,
+        );
+      }
     }
   }
-
-  // Affiche une boîte de dialogue de confirmation avant la déconnexion
-  static Future<void> confirmAndLogout(BuildContext context) async {
-    final bool? confirm = await showDialog<bool>(
+  
+  static void confirmAndLogout(BuildContext context) {
+    showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color.fromARGB(255, 50, 65, 81),
         title: const Text('Déconnexion', style: TextStyle(color: Colors.white)),
         content: const Text(
-          'Voulez-vous vraiment vous déconnecter ?',
+          'Êtes-vous sûr de vouloir vous déconnecter ?',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.pop(context),
             child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Déconnexion', style: TextStyle(color: Colors.redAccent)),
+            onPressed: () {
+              Navigator.pop(context);
+              // Appeler la méthode statique correctement
+              logout(context);
+            },
+            child: const Text('Se déconnecter', style: TextStyle(color: Colors.blue)),
           ),
         ],
       ),
     );
-    
-    if (confirm == true) {
-      await logout(context);
-    }
   }
 }
